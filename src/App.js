@@ -8,7 +8,7 @@ function Nav({ page, setPage, authed }) {
   return (
     <nav className="nav">
       <button className="nav-logo" onClick={() => setPage("landing")}>
-        Career<span>AI</span>
+        DAFTA<span>AI</span>
       </button>
 
       {!authed ? (
