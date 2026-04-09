@@ -1,16 +1,29 @@
 import { useState, useRef, useEffect } from "react";
 import "./App.css";
+import { auth, db } from "./firebase";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "firebase/auth";
+import {
+  doc, setDoc, getDoc, serverTimestamp
+} from "firebase/firestore";
 
 /* ─────────────────────────────────────
    NAVIGATION
 ───────────────────────────────────── */
-function Nav({ page, setPage, authed }) {
+function Nav({ page, setPage, authed, user, onSignOut }) {
+  const initials = user?.displayName
+    ? user.displayName.split(" ").map(n => n[0]).join("").toUpperCase()
+    : user?.email?.slice(0, 2).toUpperCase() || "JD";
+
   return (
     <nav className="nav">
       <button className="nav-logo" onClick={() => setPage("landing")}>
-        DAFTA<span>AI</span>
+        Career<span>AI</span>
       </button>
-
       {!authed ? (
         <div className="nav-links">
           <button className="nav-link" onClick={() => setPage("landing")}>Home</button>
@@ -21,7 +34,8 @@ function Nav({ page, setPage, authed }) {
         <div className="nav-links">
           <button className="nav-link" onClick={() => setPage("dashboard")}>Dashboard</button>
           <button className="nav-link" onClick={() => setPage("profile")}>Profile</button>
-          <button className="nav-avatar">JD</button>
+          <button className="btn btn-ghost btn-sm" onClick={onSignOut}>Sign out</button>
+          <button className="nav-avatar">{initials}</button>
         </div>
       )}
     </nav>
@@ -33,12 +47,12 @@ function Nav({ page, setPage, authed }) {
 ───────────────────────────────────── */
 function Landing({ setPage }) {
   const features = [
-    { emoji: "🧠", bg: "rgba(79,142,247,0.12)", title: "AI Career Matching", desc: "Our model analyses your skills, interests, and goals to surface careers you are uniquely suited for." },
-    { emoji: "📄", bg: "rgba(6,214,160,0.1)", title: "CV Analysis", desc: "Upload your CV and we extract your competencies, experience level, and skill gaps automatically." },
-    { emoji: "🗺️", bg: "rgba(124,58,237,0.12)", title: "Learning Roadmaps", desc: "Get a personalised step-by-step path — courses, certifications, and milestones tailored to you." },
+    { emoji: "🧠", bg: "rgba(59,130,246,0.12)", title: "AI Career Matching", desc: "Our model analyses your skills, interests, and goals to surface careers you are uniquely suited for." },
+    { emoji: "📄", bg: "rgba(16,185,129,0.1)", title: "CV Analysis", desc: "Upload your CV and we extract your competencies, experience level, and skill gaps automatically." },
+    { emoji: "🗺️", bg: "rgba(139,92,246,0.12)", title: "Learning Roadmaps", desc: "Get a personalised step-by-step path — courses, certifications, and milestones tailored to you." },
     { emoji: "💬", bg: "rgba(245,158,11,0.1)", title: "AI Chat Advisor", desc: "Ask anything about careers, salaries, industry trends, or interview prep in real time." },
     { emoji: "📊", bg: "rgba(244,63,94,0.1)", title: "Skill Gap Tracker", desc: "See exactly where you stand vs your target role and track your progress over time." },
-    { emoji: "🎯", bg: "rgba(79,142,247,0.1)", title: "Goal Setting", desc: "Set short and long-term career goals and get AI nudges to keep you on track." },
+    { emoji: "🎯", bg: "rgba(59,130,246,0.1)", title: "Goal Setting", desc: "Set short and long-term career goals and get AI nudges to keep you on track." },
   ];
 
   const stats = [
@@ -50,26 +64,21 @@ function Landing({ setPage }) {
 
   return (
     <div>
-      {/* Hero */}
       <div className="hero">
         <div className="hero-grid" />
         <div className="hero-glow" />
-
         <div className="hero-eyebrow">
           <div className="hero-eyebrow-dot" />
           AI-powered career intelligence
         </div>
-
         <h1 className="hero-title">
           Discover the career<br />
           <span className="grad">you were built for</span>
         </h1>
-
         <p className="hero-sub">
           CareerAI analyses your skills, interests, and goals to surface
           personalised career paths, skill gaps, and learning roadmaps.
         </p>
-
         <div className="hero-actions">
           <button className="btn btn-primary btn-lg" onClick={() => setPage("auth")}>
             Start for free →
@@ -80,7 +89,6 @@ function Landing({ setPage }) {
         </div>
       </div>
 
-      {/* Stats */}
       <div className="stats-row">
         {stats.map(([num, label]) => (
           <div className="stat" key={label}>
@@ -90,7 +98,6 @@ function Landing({ setPage }) {
         ))}
       </div>
 
-      {/* Features */}
       <div className="features-section">
         <div className="section-label">Features</div>
         <div className="section-title">Everything you need to navigate your career</div>
@@ -105,7 +112,6 @@ function Landing({ setPage }) {
         </div>
       </div>
 
-      {/* CTA */}
       <div className="cta-section">
         <div className="cta-title">Ready to find your path?</div>
         <div className="cta-sub">Join thousands of students navigating smarter careers.</div>
@@ -118,25 +124,54 @@ function Landing({ setPage }) {
 }
 
 /* ─────────────────────────────────────
-   AUTH PAGE
+   AUTH PAGE — Firebase Auth
 ───────────────────────────────────── */
-function Auth({ setPage, setAuthed }) {
+function Auth({ setPage, setAuthed, setUser }) {
   const [tab, setTab] = useState("signin");
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [first, setFirst] = useState("");
   const [last, setLast] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function handleSubmit() {
-    setAuthed(true);
-    setPage("profile");
+  async function handleSubmit() {
+    setError("");
+    setLoading(true);
+    try {
+      if (tab === "signup") {
+        if (pass !== confirm) { setError("Passwords do not match."); setLoading(false); return; }
+        const cred = await createUserWithEmailAndPassword(auth, email, pass);
+        // Save user profile to Firestore
+        await setDoc(doc(db, "users", cred.user.uid), {
+          firstName: first,
+          lastName: last,
+          email: email,
+          createdAt: serverTimestamp(),
+          skills: [],
+          interests: [],
+          goal: "",
+          eduLevel: "undergraduate",
+        });
+        setUser(cred.user);
+        setAuthed(true);
+        setPage("profile");
+      } else {
+        const cred = await signInWithEmailAndPassword(auth, email, pass);
+        setUser(cred.user);
+        setAuthed(true);
+        setPage("dashboard");
+      }
+    } catch (err) {
+      setError(err.message.replace("Firebase: ", "").replace(/ \(auth\/.*\)/, ""));
+    }
+    setLoading(false);
   }
 
   return (
     <div className="auth-page">
       <div className="auth-bg" />
-
       <div className="auth-card">
         <div className="auth-header">
           <div className="auth-logo">Career<span>AI</span></div>
@@ -146,17 +181,15 @@ function Auth({ setPage, setAuthed }) {
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="auth-tabs">
-          <button className={"auth-tab" + (tab === "signin" ? " active" : "")} onClick={() => setTab("signin")}>
+          <button className={"auth-tab" + (tab === "signin" ? " active" : "")} onClick={() => { setTab("signin"); setError(""); }}>
             Sign in
           </button>
-          <button className={"auth-tab" + (tab === "signup" ? " active" : "")} onClick={() => setTab("signup")}>
+          <button className={"auth-tab" + (tab === "signup" ? " active" : "")} onClick={() => { setTab("signup"); setError(""); }}>
             Sign up
           </button>
         </div>
 
-        {/* Sign-up extra fields */}
         {tab === "signup" && (
           <div className="form-row" style={{ marginBottom: 16 }}>
             <div>
@@ -187,18 +220,23 @@ function Auth({ setPage, setAuthed }) {
           </div>
         )}
 
+        {error && (
+          <div style={{ background: "rgba(244,63,94,0.1)", border: "1px solid rgba(244,63,94,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#f43f5e", marginBottom: 14 }}>
+            {error}
+          </div>
+        )}
+
         {tab === "signin" && (
           <div className="forgot-link">
             <button className="auth-link">Forgot password?</button>
           </div>
         )}
 
-        <button className="btn btn-primary btn-full" onClick={handleSubmit} style={{ marginBottom: 16 }}>
-          {tab === "signin" ? "Sign in →" : "Create account →"}
+        <button className="btn btn-primary btn-full" onClick={handleSubmit} style={{ marginBottom: 16 }} disabled={loading}>
+          {loading ? "Please wait..." : tab === "signin" ? "Sign in →" : "Create account →"}
         </button>
 
         <div className="divider">or continue with</div>
-
         <div className="social-btns">
           <button className="social-btn">G &nbsp; Google</button>
           <button className="social-btn">in &nbsp; LinkedIn</button>
@@ -221,15 +259,22 @@ function Auth({ setPage, setAuthed }) {
 }
 
 /* ─────────────────────────────────────
-   PROFILE BUILDER
+   PROFILE BUILDER — saves to Firestore
 ───────────────────────────────────── */
-function Profile({ setPage }) {
+function Profile({ setPage, user }) {
   const [step, setStep] = useState(0);
-  const [skills, setSkills] = useState(["Python", "Data Analysis", "Communication"]);
+  const [skills, setSkills] = useState([]);
   const [skillInput, setSkillInput] = useState("");
-  const [interests, setInterests] = useState(["Technology", "Science"]);
+  const [interests, setInterests] = useState([]);
   const [eduLevel, setEduLevel] = useState("undergraduate");
   const [goal, setGoal] = useState("");
+  const [challenge, setChallenge] = useState("");
+  const [workStyle, setWorkStyle] = useState("Remote first");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [fieldOfStudy, setFieldOfStudy] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const steps = ["Personal info", "Skills", "Interests", "Career goals", "Upload CV"];
 
@@ -242,6 +287,25 @@ function Profile({ setPage }) {
     { emoji: "🎮", label: "Gaming" }, { emoji: "✈️", label: "Travel" },
   ];
 
+  // Load existing profile from Firestore
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, "users", user.uid)).then((snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        setFirstName(d.firstName || "");
+        setLastName(d.lastName || "");
+        setSkills(d.skills || []);
+        setInterests(d.interests || []);
+        setEduLevel(d.eduLevel || "undergraduate");
+        setGoal(d.goal || "");
+        setChallenge(d.challenge || "");
+        setWorkStyle(d.workStyle || "Remote first");
+        setFieldOfStudy(d.fieldOfStudy || "");
+      }
+    });
+  }, [user]);
+
   function addSkill() {
     const val = skillInput.trim();
     if (val && !skills.includes(val)) {
@@ -250,14 +314,25 @@ function Profile({ setPage }) {
     }
   }
 
-  function removeSkill(s) {
-    setSkills(skills.filter((x) => x !== s));
-  }
+  function removeSkill(s) { setSkills(skills.filter((x) => x !== s)); }
 
   function toggleInterest(label) {
     setInterests((prev) =>
       prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label]
     );
+  }
+
+  async function saveProfile() {
+    if (!user) return;
+    setSaving(true);
+    await setDoc(doc(db, "users", user.uid), {
+      firstName, lastName, skills, interests,
+      eduLevel, goal, challenge, workStyle, fieldOfStudy,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   }
 
   const progress = (step / (steps.length - 1)) * 100;
@@ -272,7 +347,6 @@ function Profile({ setPage }) {
 
   return (
     <div className="profile-page">
-      {/* Progress bar */}
       <div className="profile-top">
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
           <span style={{ fontSize: 13, color: "var(--muted2)" }}>Step {step + 1} of {steps.length}</span>
@@ -284,7 +358,6 @@ function Profile({ setPage }) {
       </div>
 
       <div className="profile-layout">
-        {/* Sidebar */}
         <div className="profile-sidebar">
           <div className="sidebar-heading">Setup</div>
           <div className="profile-steps">
@@ -301,7 +374,6 @@ function Profile({ setPage }) {
           </div>
         </div>
 
-        {/* Main content */}
         <div>
           <div className="profile-header">
             <div className="profile-title">{steps[step]}</div>
@@ -309,22 +381,21 @@ function Profile({ setPage }) {
           </div>
 
           <div className="card" style={{ padding: 28 }}>
-            {/* Step 0: Personal info */}
             {step === 0 && (
               <div>
                 <div className="form-row" style={{ marginBottom: 16 }}>
                   <div>
                     <label className="label">First name</label>
-                    <input className="input" defaultValue="John" />
+                    <input className="input" placeholder="John" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
                   </div>
                   <div>
                     <label className="label">Last name</label>
-                    <input className="input" defaultValue="Doe" />
+                    <input className="input" placeholder="Doe" value={lastName} onChange={(e) => setLastName(e.target.value)} />
                   </div>
                 </div>
                 <div className="form-group">
                   <label className="label">Email</label>
-                  <input className="input" type="email" defaultValue="john@example.com" />
+                  <input className="input" type="email" value={user?.email || ""} disabled style={{ opacity: 0.6 }} />
                 </div>
                 <div className="form-group">
                   <label className="label">Education level</label>
@@ -337,12 +408,11 @@ function Profile({ setPage }) {
                 </div>
                 <div className="form-group">
                   <label className="label">Field of study / current role</label>
-                  <input className="input" placeholder="e.g. Computer Science, Software Engineer..." />
+                  <input className="input" placeholder="e.g. Computer Science, Software Engineer..." value={fieldOfStudy} onChange={(e) => setFieldOfStudy(e.target.value)} />
                 </div>
               </div>
             )}
 
-            {/* Step 1: Skills */}
             {step === 1 && (
               <div>
                 <div className="skill-input-row">
@@ -369,7 +439,6 @@ function Profile({ setPage }) {
               </div>
             )}
 
-            {/* Step 2: Interests */}
             {step === 2 && (
               <div>
                 <div style={{ fontSize: 14, color: "var(--muted2)", marginBottom: 16 }}>
@@ -390,28 +459,19 @@ function Profile({ setPage }) {
               </div>
             )}
 
-            {/* Step 3: Goals */}
             {step === 3 && (
               <div>
                 <div className="form-group">
                   <label className="label">Where do you see yourself in 5 years?</label>
-                  <textarea
-                    className="input textarea"
-                    placeholder="e.g. I want to be a senior data scientist at a tech company..."
-                    value={goal}
-                    onChange={(e) => setGoal(e.target.value)}
-                  />
+                  <textarea className="input textarea" placeholder="e.g. I want to be a senior data scientist..." value={goal} onChange={(e) => setGoal(e.target.value)} />
                 </div>
                 <div className="form-group">
                   <label className="label">What is your biggest career challenge right now?</label>
-                  <textarea
-                    className="input textarea"
-                    placeholder="e.g. I do not know which direction to take after graduation..."
-                  />
+                  <textarea className="input textarea" placeholder="e.g. I do not know which direction to take after graduation..." value={challenge} onChange={(e) => setChallenge(e.target.value)} />
                 </div>
                 <div className="form-group">
                   <label className="label">Preferred work style</label>
-                  <select className="input select">
+                  <select className="input select" value={workStyle} onChange={(e) => setWorkStyle(e.target.value)}>
                     <option>Remote first</option>
                     <option>Hybrid</option>
                     <option>On-site</option>
@@ -421,7 +481,6 @@ function Profile({ setPage }) {
               </div>
             )}
 
-            {/* Step 4: CV upload */}
             {step === 4 && (
               <div>
                 <div className="cv-dropzone">
@@ -437,20 +496,24 @@ function Profile({ setPage }) {
             )}
           </div>
 
-          {/* Navigation */}
           <div className="profile-nav">
-            <button
-              className="btn btn-ghost"
-              onClick={() => (step > 0 ? setStep(step - 1) : setPage("landing"))}
-            >
+            <button className="btn btn-ghost" onClick={() => (step > 0 ? setStep(step - 1) : setPage("landing"))}>
               ← {step === 0 ? "Back" : "Previous"}
             </button>
-            <button
-              className="btn btn-primary"
-              onClick={() => (step < steps.length - 1 ? setStep(step + 1) : setPage("dashboard"))}
-            >
-              {step === steps.length - 1 ? "View my matches →" : "Continue →"}
-            </button>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="btn btn-outline" onClick={saveProfile} disabled={saving}>
+                {saving ? "Saving..." : saved ? "✓ Saved!" : "Save progress"}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  saveProfile();
+                  step < steps.length - 1 ? setStep(step + 1) : setPage("dashboard");
+                }}
+              >
+                {step === steps.length - 1 ? "View my matches →" : "Continue →"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -461,18 +524,29 @@ function Profile({ setPage }) {
 /* ─────────────────────────────────────
    DASHBOARD
 ───────────────────────────────────── */
-function Dashboard({ setPage }) {
+function Dashboard({ setPage, user }) {
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState([
-    { role: "ai", text: "Hi John! Based on your profile I found 12 great career matches. Want me to walk you through the top picks?" },
+    { role: "ai", text: "Hi! Based on your profile I found career matches for you. Want me to walk you through the top picks?" },
     { role: "user", text: "Yes, tell me about Data Science roles." },
     { role: "ai", text: "Great choice! Data Science is a strong match — your Python and analysis skills align well. You would need to strengthen ML and statistics. Want a roadmap?" },
   ]);
+  const [userName, setUserName] = useState("there");
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Load user name from Firestore
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, "users", user.uid)).then((snap) => {
+      if (snap.exists() && snap.data().firstName) {
+        setUserName(snap.data().firstName);
+      }
+    });
+  }, [user]);
 
   function sendMessage() {
     const text = chatInput.trim();
@@ -502,11 +576,11 @@ function Dashboard({ setPage }) {
   ];
 
   const skillGaps = [
-    { name: "Machine Learning", current: 35, color: "#4f8ef7" },
-    { name: "Statistics", current: 55, color: "#7c3aed" },
-    { name: "SQL", current: 70, color: "#06d6a0" },
+    { name: "Machine Learning", current: 35, color: "#3b82f6" },
+    { name: "Statistics", current: 55, color: "#8b5cf6" },
+    { name: "SQL", current: 70, color: "#10b981" },
     { name: "Data Viz", current: 60, color: "#f59e0b" },
-    { name: "Communication", current: 80, color: "#06d6a0" },
+    { name: "Communication", current: 80, color: "#10b981" },
   ];
 
   const mainLinks = [
@@ -525,7 +599,6 @@ function Dashboard({ setPage }) {
 
   return (
     <div className="dashboard">
-      {/* Sidebar */}
       <aside className="app-sidebar">
         <div className="sidebar-section">
           <div className="sidebar-section-label">Main</div>
@@ -545,7 +618,6 @@ function Dashboard({ setPage }) {
             </button>
           ))}
         </div>
-
         <div className="sidebar-footer">
           <div className="sidebar-promo">
             <div style={{ fontSize: 12, fontWeight: 600, color: "#7eb5ff", marginBottom: 6 }}>Profile 60% complete</div>
@@ -557,12 +629,10 @@ function Dashboard({ setPage }) {
         </div>
       </aside>
 
-      {/* Main content */}
       <main className="dashboard-main">
         <div className="dash-greeting">Good morning 👋</div>
-        <div className="dash-title">Welcome back, John</div>
+        <div className="dash-title">Welcome back, {userName}</div>
 
-        {/* Metrics */}
         <div className="metrics-row">
           {metrics.map((m) => (
             <div key={m.label} className={"metric-card " + m.cls}>
@@ -574,9 +644,7 @@ function Dashboard({ setPage }) {
           ))}
         </div>
 
-        {/* Career matches + Chat */}
         <div className="dash-grid">
-          {/* Career matches */}
           <div>
             <div className="section-hd">
               <div className="section-hd-title">Top career matches</div>
@@ -602,7 +670,6 @@ function Dashboard({ setPage }) {
             ))}
           </div>
 
-          {/* Chat panel */}
           <div className="chat-panel">
             <div className="chat-header">
               <div className="chat-avatar">🤖</div>
@@ -611,7 +678,6 @@ function Dashboard({ setPage }) {
                 <div className="chat-status">● Online</div>
               </div>
             </div>
-
             <div className="chat-messages">
               {messages.map((m, i) => (
                 <div key={i} className={"chat-msg " + m.role}>
@@ -620,7 +686,6 @@ function Dashboard({ setPage }) {
               ))}
               <div ref={messagesEndRef} />
             </div>
-
             <div className="chat-input-row">
               <input
                 className="chat-input"
@@ -634,7 +699,6 @@ function Dashboard({ setPage }) {
           </div>
         </div>
 
-        {/* Skill gap tracker */}
         <div className="skill-gap-card">
           <div className="section-hd">
             <div className="section-hd-title">Skill gap — Data Scientist</div>
@@ -664,14 +728,36 @@ function Dashboard({ setPage }) {
 export default function App() {
   const [page, setPage] = useState("landing");
   const [authed, setAuthed] = useState(false);
+  const [user, setUser] = useState(null);
+
+  // Listen to Firebase auth state
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) {
+        setUser(u);
+        setAuthed(true);
+      } else {
+        setUser(null);
+        setAuthed(false);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  async function handleSignOut() {
+    await signOut(auth);
+    setAuthed(false);
+    setUser(null);
+    setPage("landing");
+  }
 
   return (
     <div>
-      <Nav page={page} setPage={setPage} authed={authed} />
+      <Nav page={page} setPage={setPage} authed={authed} user={user} onSignOut={handleSignOut} />
       {page === "landing" && <Landing setPage={setPage} />}
-      {page === "auth" && <Auth setPage={setPage} setAuthed={setAuthed} />}
-      {page === "profile" && <Profile setPage={setPage} />}
-      {page === "dashboard" && <Dashboard setPage={setPage} />}
+      {page === "auth" && <Auth setPage={setPage} setAuthed={setAuthed} setUser={setUser} />}
+      {page === "profile" && <Profile setPage={setPage} user={user} />}
+      {page === "dashboard" && <Dashboard setPage={setPage} user={user} />}
     </div>
   );
 }
