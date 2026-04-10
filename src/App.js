@@ -22,7 +22,7 @@ function Nav({ page, setPage, authed, user, onSignOut }) {
   return (
     <nav className="nav">l
       <button className="nav-logo" onClick={() => setPage("landing")}>
-        DAFTA<span>AI</span>
+    DAFTA<span>AI</span>
       </button>
       {!authed ? (
         <div className="nav-links">
