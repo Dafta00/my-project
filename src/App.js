@@ -20,7 +20,7 @@ function Nav({ page, setPage, authed, user, onSignOut }) {
     : user?.email?.slice(0, 2).toUpperCase() || "JD";
 
   return (
-    <nav className="nav">
+    <nav className="nav">l
       <button className="nav-logo" onClick={() => setPage("landing")}>
         DAFTA<span>AI</span>
       </button>
@@ -76,7 +76,7 @@ function Landing({ setPage }) {
           <span className="grad">you were built for</span>
         </h1>
         <p className="hero-sub">
-          CareerAI analyses your skills, interests, and goals to surface
+          DAFTA AI analyses your skills, interests, and goals to surface
           personalised career paths, skill gaps, and learning roadmaps.
         </p>
         <div className="hero-actions">
