@@ -738,8 +738,8 @@ export default function App() {
         setAuthed(true);
       } else {
         setUser(u);
-setAuthed(true);
-setPage((prev) => prev === "auth" || prev === "landing" ? "dashboard" : prev);
+        setAuthed(true);
+        setPage((prev) => prev === "auth" || prev === "landing" ? "dashboard" : prev);
       }
     });
     return () => unsub();
@@ -747,8 +747,8 @@ setPage((prev) => prev === "auth" || prev === "landing" ? "dashboard" : prev);
 
   async function handleSignOut() {
     await signOut(auth);
-    setAuthed(false);
-    setUser(null);
+    setAuthed(true);
+    setUser(u);
     setPage("landing");
   }
 
