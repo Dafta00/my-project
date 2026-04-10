@@ -144,7 +144,7 @@ function Auth({ setPage, setAuthed, setUser }) {
         if (pass !== confirm) { setError("Passwords do not match."); setLoading(false); return; }
         const cred = await createUserWithEmailAndPassword(auth, email, pass);
         // Save user profile to Firestore
-        await setDoc(doc(db, "users", cred.user.uid), {
+        setDoc(doc(db, "users", cred.user.uid), {
           firstName: first,
           lastName: last,
           email: email,
