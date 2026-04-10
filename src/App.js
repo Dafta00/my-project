@@ -144,7 +144,7 @@ function Auth({ setPage, setAuthed, setUser }) {
         if (pass !== confirm) { setError("Passwords do not match."); setLoading(false); return; }
         const cred = await createUserWithEmailAndPassword(auth, email, pass);
         // Save user profile to Firestore
-        setDoc(doc(db, "users", cred.user.uid), {
+        await setDoc(doc(db, "users", cred.user.uid), {
           firstName: first,
           lastName: last,
           email: email,
@@ -736,10 +736,10 @@ export default function App() {
       if (u) {
         setUser(u);
         setAuthed(true);
+        // page is set by Auth component directly
       } else {
-        setUser(u);
-        setAuthed(true);
-        setPage((prev) => prev === "auth" || prev === "landing" ? "dashboard" : prev);
+        setUser(null);
+        setAuthed(false);
       }
     });
     return () => unsub();
@@ -747,8 +747,8 @@ export default function App() {
 
   async function handleSignOut() {
     await signOut(auth);
-    setAuthed(true);
-    setUser(u);
+    setAuthed(false);
+    setUser(null);
     setPage("landing");
   }
 
