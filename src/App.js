@@ -737,8 +737,9 @@ export default function App() {
         setUser(u);
         setAuthed(true);
       } else {
-        setUser(null);
-        setAuthed(false);
+        setUser(u);
+setAuthed(true);
+setPage((prev) => prev === "auth" || prev === "landing" ? "dashboard" : prev);
       }
     });
     return () => unsub();
